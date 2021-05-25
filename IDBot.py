@@ -5,10 +5,12 @@ import requests
 import urllib.request
 import uuid
 import json
+import time
+import datetime
 
-username='EGarandel@IDBot'
-password='3oa19ucknig3qcb37imc82i1of9oqojr'
-homeurl='http://wikipast.epfl.ch/wikipast/'
+username ='EGarandel@UniqueIDBot'
+password ='f8p9j2c0uupfmfntvtvkbkk9t56oqqqk'
+homeurl ='http://wikipast.epfl.ch/wikipast/'
 ID_title = 'Identifiant Wikipast : '
 human_text = '[https://www.wikidata.org/wiki/Q5 Q5]'
 
@@ -34,13 +36,12 @@ def login():
     return edit_cookie, edit_token, json_data["login"]["result"] == "Success"
 
 def naviguate(edit_cookie, edit_token):
-
     page_counter = 0
     source_link = 'http://wikipast.epfl.ch/wiki/Special:Toutes_les_pages'
     source = requests.get(source_link).text
     soup = BeautifulSoup(source, 'lxml')
 
-    while(source_link):
+    while(source_link and page_counter <= 1):
         #On trouve la liste des pages
         pages_body = soup.find('div', class_='mw-allpages-body')
         pages_list = pages_body.find_all('li')
@@ -52,9 +53,7 @@ def naviguate(edit_cookie, edit_token):
 
             page_link = f'http://wikipast.epfl.ch{page_link}'
 
-            checkAndGenerate(page_link, page_name, edit_cookie, edit_token)
-            page_counter = page_counter + 1
-
+            page_counter = checkAndGenerate(page_link, page_name, edit_cookie, edit_token, page_counter)
 
         #On trouve le liens pour la page suivante
         next_page = soup.find('div', class_='mw-allpages-nav')
@@ -93,9 +92,9 @@ def naviguate(edit_cookie, edit_token):
             source = requests.get(source_link).text
             soup = BeautifulSoup(source, 'lxml')
 
-    print('Nombre total de page = ', page_counter)
+    return page_counter
 
-def checkAndGenerate(link, title, edit_cookie, edit_token):
+def checkAndGenerate(link, title, edit_cookie, edit_token, counter):
     '''
         Check if the page contains a identifier :
         - if it is the case, it checks if it's a human and adds a identifier accordingly
@@ -107,20 +106,21 @@ def checkAndGenerate(link, title, edit_cookie, edit_token):
 
     already_id = ID_title in wikitext
     if already_id:
-        print("Cette page possède déjà un identifiant")
+        print("La page ", title," possède déjà un identifiant")
     else :    
         is_human = human_text in wikitext
         if is_human:
-            #modify_page(generate_text(link), title, edit_cookie, edit_token)
-            print("Cette page possède un humain")
+            return modify_page(generate_text(link), title, edit_cookie, edit_token, counter)
+
+    return counter
 
 def generate_text(link):
     ''' A partir d'un lien URL, génére un identifiant unique'''
 
-    guuid = uuid.uuid3(uuid.NAMESPACE_URL, link)
+    guuid = uuid.uuid5(uuid.NAMESPACE_URL, link)
     return ID_title + str(guuid)+'\n\n'
 
-def modify_page(uuid_text, title, edit_cookie, edit_token):
+def modify_page(uuid_text, title, edit_cookie, edit_token, counter):
 
     '''
         Ajoute l'identifiant en début de page et indique si l'ajout a été un succès ou non (potentiel erreur)
@@ -132,15 +132,24 @@ def modify_page(uuid_text, title, edit_cookie, edit_token):
 
     if not id_added:
         print("Erreur de modification pour la page "+ title)
+        return counter
     else :
-        print("Identifiant ajouté avec succès pour la page "+ title)
+        return counter + 1
+        
 
 def main():
+    start = time.time()
+    counter= 0
     edit_cookie, edit_token,logged_in = login()
 
     if logged_in:
         print("Connexion réussie : début de la génération des identifiants")
-        naviguate(edit_cookie, edit_token)
+        counter = naviguate(edit_cookie, edit_token)
+        end = time.time()
+        duration = end - start
+        res = datetime.timedelta(seconds =duration)
+        print('Fin du progamme : ', counter, ' pages ont été modifiées en ',res)
+
     else:
         print("Erreur de connexion : vérifier vos identifiants et votre connexion (arrêt du bot)")  
 
