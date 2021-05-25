@@ -7,6 +7,7 @@ import uuid
 import json
 import time
 import datetime
+import re
 
 username ='EGarandel@UniqueIDBot'
 password ='f8p9j2c0uupfmfntvtvkbkk9t56oqqqk'
@@ -37,11 +38,12 @@ def login():
 
 def naviguate(edit_cookie, edit_token):
     page_counter = 0
+    page_modified = 0
     source_link = 'http://wikipast.epfl.ch/wiki/Special:Toutes_les_pages'
     source = requests.get(source_link).text
     soup = BeautifulSoup(source, 'lxml')
 
-    while(source_link and page_counter <= 1):
+    while(source_link and page_counter <= 200):
         #On trouve la liste des pages
         pages_body = soup.find('div', class_='mw-allpages-body')
         pages_list = pages_body.find_all('li')
@@ -53,7 +55,8 @@ def naviguate(edit_cookie, edit_token):
 
             page_link = f'http://wikipast.epfl.ch{page_link}'
 
-            page_counter = checkAndGenerate(page_link, page_name, edit_cookie, edit_token, page_counter)
+            page_modified = checkAndGenerate(page_link, page_name, edit_cookie, edit_token, page_modified)
+            page_counter += 1
 
         #On trouve le liens pour la page suivante
         next_page = soup.find('div', class_='mw-allpages-nav')
@@ -66,6 +69,7 @@ def naviguate(edit_cookie, edit_token):
         Dans tous les autres cas, il y a 2 balises de type <a> <\a> pour page suivante et page précédente.
         next_page = next_page.find_all('a') est donc de longueur 2 dans ce cas. 
         '''
+
         #Si on se trouve sur la première ou dernière page
         if next_page.__len__() == 1:
             # Si c'est la première page, on cherche juste le liens de la page suivante:
@@ -92,24 +96,29 @@ def naviguate(edit_cookie, edit_token):
             source = requests.get(source_link).text
             soup = BeautifulSoup(source, 'lxml')
 
-    return page_counter
+    return page_counter, page_modified
 
 def checkAndGenerate(link, title, edit_cookie, edit_token, counter):
     '''
         Check if the page contains a identifier :
         - if it is the case, it checks if it's a human and adds a identifier accordingly
         - if is is the case, it skips the page
+        (Des expressions régulières sont utilisés afin de reconnaitre les patterns présents sur les pages)
     '''
+
     payload={'action':'parse', 'format':'json', 'page':title,'prop':'wikitext','formatversion':'2'}
     r4=requests.post(homeurl+'api.php',data=payload,cookies=edit_cookie)
     wikitext = json.loads(r4.text)["parse"]["wikitext"]
+    
+    has_id = re.search(r"Identifiant Wikipast\s:\s.+\s", wikitext)
 
-    already_id = ID_title in wikitext
-    if already_id:
-        print("La page ", title," possède déjà un identifiant")
+    if has_id is not None:
+        return counter
     else :    
-        is_human = human_text in wikitext
-        if is_human:
+        wikidata_found = re.search(r"Wikidata: \[.+\s.+\] \(\[https://www.wikidata.org/wiki/Q5 Q5\)\]", wikitext)
+        wikidata_not_match_found = re.search(r"Wikidata: \[.+ Match not found\] \(\[https://www.wikidata.org/wiki/Q5 Q5\]\)", wikitext)
+        bnf_id = re.search(r"BnF ID: \[.+\s.+\]", wikitext) 
+        if (wikidata_found is not None and wikidata_not_match_found is None) or bnf_id is not None:
             return modify_page(generate_text(link), title, edit_cookie, edit_token, counter)
 
     return counter
@@ -144,11 +153,11 @@ def main():
 
     if logged_in:
         print("Connexion réussie : début de la génération des identifiants")
-        counter = naviguate(edit_cookie, edit_token)
+        counter, modification = naviguate(edit_cookie, edit_token)
         end = time.time()
         duration = end - start
         res = datetime.timedelta(seconds =duration)
-        print('Fin du progamme : ', counter, ' pages ont été modifiées en ',res)
+        print('Fin du progamme : ', counter, ' pages ont été évaluées et ', modification, 'ont été modifiées en ',res)
 
     else:
         print("Erreur de connexion : vérifier vos identifiants et votre connexion (arrêt du bot)")  
